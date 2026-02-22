@@ -1,0 +1,24 @@
+[workspace]
+
+[package]
+name = "z-image-train"
+version = "0.1.0"
+edition = "2024"
+description = "Standalone LoRA training and model conversion CLI for Z-Image"
+
+[dependencies]
+z-image = { git = "https://github.com/holg/z-image-burn.git", branch = "develop" }
+qwen3-burn = { git = "https://github.com/holg/qwen3-burn.git" }
+burn = { git = "https://github.com/tracel-ai/burn.git", features = ["wgpu", "autodiff", "train", "store", "vision", "ndarray"] }
+clap = { version = "4", features = ["derive"] }
+image = "0.25"
+serde_json = "1.0"
+
+[features]
+default = []
+metal = ["burn/metal"]
+vulkan = ["burn/vulkan"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
