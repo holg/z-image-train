@@ -106,9 +106,24 @@ enum Command {
         #[arg(long, default_value = "transformer")]
         model_type: String,
 
+        /// Cast weights to dtype: f32, f16, or bf16
+        #[arg(long)]
+        dtype: Option<String>,
+
         /// Overwrite existing output file
         #[arg(long)]
         overwrite: bool,
+    },
+
+    /// Inspect a .bpk file: print tensor names, shapes, and dtypes
+    Inspect {
+        /// Path to the .bpk file to inspect
+        #[arg(long)]
+        input: PathBuf,
+
+        /// Max number of tensors to display (0 = all)
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
     },
 
     /// Generate an image using base model + LoRA weights
@@ -177,6 +192,7 @@ fn main() -> ExitCode {
             input,
             output,
             model_type,
+            dtype,
             overwrite,
         } => {
             let model_type: convert::ModelType = match model_type.parse() {
@@ -186,14 +202,27 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             };
+            let dtype = match dtype.as_deref() {
+                None => None,
+                Some("f32") => Some(burn::tensor::FloatDType::F32),
+                Some("f16") => Some(burn::tensor::FloatDType::F16),
+                Some("bf16") => Some(burn::tensor::FloatDType::BF16),
+                Some(d) => {
+                    eprintln!("Error: Unknown dtype '{d}'. Use: f32, f16, or bf16");
+                    return ExitCode::FAILURE;
+                }
+            };
             let args = convert::ConvertArgs {
                 input,
                 output,
                 model_type,
                 overwrite,
+                dtype,
             };
             convert::run_convert(&args)
         }
+
+        Command::Inspect { input, limit } => run_inspect(input, limit),
 
         Command::Generate {
             model_dir,
@@ -213,6 +242,48 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn run_inspect(input: PathBuf, limit: usize) -> Result<(), String> {
+    use burn::store::{BurnpackStore, ModuleStore};
+    use std::collections::HashMap;
+
+    eprintln!("Inspecting: {}", input.display());
+
+    let mut store = BurnpackStore::from_file(&input);
+    let snapshots = store
+        .get_all_snapshots()
+        .map_err(|e| format!("Failed to read .bpk: {e}"))?
+        .clone();
+
+    let total = snapshots.len();
+    eprintln!("Total tensors: {}\n", total);
+
+    let mut dtype_counts: HashMap<String, usize> = HashMap::new();
+    let display_count = if limit == 0 { total } else { limit.min(total) };
+
+    for (i, (name, snapshot)) in snapshots.iter().enumerate() {
+        let data: burn::tensor::TensorData = snapshot
+            .to_data()
+            .map_err(|e| format!("Failed to read tensor '{name}': {e}"))?;
+        let dtype_str = format!("{:?}", data.dtype);
+        *dtype_counts.entry(dtype_str.clone()).or_insert(0) += 1;
+
+        if i < display_count {
+            eprintln!("  [{:>4}] {:<80} {:?}  {:?}", i, name, data.shape, data.dtype);
+        }
+    }
+
+    if display_count < total {
+        eprintln!("  ... ({} more tensors, use --limit 0 to show all)", total - display_count);
+    }
+
+    eprintln!("\n--- Dtype Summary ---");
+    for (dtype, count) in &dtype_counts {
+        eprintln!("  {}: {} tensors", dtype, count);
+    }
+
+    Ok(())
 }
 
 fn run_generate(
@@ -237,7 +308,7 @@ fn run_generate(
     let te_path = train::find_model_file_pub(&model_dir, &["qwen3_4b_text_encoder"])?;
     let transformer_path = train::find_model_file_pub(
         &model_dir,
-        &["z_image_turbo_bf16", "z_image_turbo", "z_image"],
+        &["z_image_turbo_f16", "z_image_turbo_bf16", "z_image_turbo", "z_image"],
     )?;
     let ae_path = train::find_model_file_pub(&model_dir, &["ae"])?;
 

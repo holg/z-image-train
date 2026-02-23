@@ -175,7 +175,7 @@ pub fn run_training<B: AutodiffBackend>(args: &TrainArgs, device: &B::Device) ->
     let te_path = find_model_file(&args.model_dir, &["qwen3_4b_text_encoder"])?;
     let transformer_path = find_model_file(
         &args.model_dir,
-        &["z_image_turbo_bf16", "z_image_turbo", "z_image"],
+        &["z_image_turbo_f16", "z_image_turbo_bf16", "z_image_turbo", "z_image"],
     )?;
     let ae_path = find_model_file(&args.model_dir, &["ae"])?;
 

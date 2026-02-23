@@ -2,7 +2,7 @@
 
 [package]
 name = "z-image-train"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Standalone LoRA training and model conversion CLI for Z-Image"
 

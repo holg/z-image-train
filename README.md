@@ -93,7 +93,8 @@ The model directory should contain:
 |------|-------------|
 | `tokenizer.json` or `qwen3-tokenizer.json` | Qwen3 tokenizer |
 | `qwen3_4b_text_encoder.{bpk,safetensors}` | Qwen3 4B text encoder |
-| `z_image_turbo_bf16.{bpk,safetensors}` | Z-Image transformer (turbo/standard variants) |
+| `z_image_turbo_f16.{bpk,safetensors}` | Z-Image transformer (f16 — recommended for WGPU) |
+| `z_image_turbo_bf16.{bpk,safetensors}` | Z-Image transformer (bf16 — requires Metal/Vulkan) |
 | `ae.{bpk,safetensors}` | Autoencoder (VAE) |
 
 `.bpk` files are preferred if both formats are present.
@@ -129,9 +130,9 @@ z-image-train generate \
 
 Uses flow matching with Euler discrete scheduling (1000 timesteps, mu=3.0).
 
-### `convert` — Convert model formats
+### `convert` — Convert model formats and dtypes
 
-Convert weights between `.safetensors` and `.bpk` formats.
+Convert weights between `.safetensors` and `.bpk` formats, and optionally cast to a different precision (e.g. bf16 → f32 for WGPU compatibility).
 
 ```sh
 # safetensors → bpk
@@ -139,6 +140,13 @@ z-image-train convert \
   --input model.safetensors \
   --output model.bpk \
   --model-type transformer
+
+# Convert bf16 weights to f32 (needed for WGPU/WGSL backends on AMD/Linux)
+z-image-train convert \
+  --input z_image_turbo_bf16.bpk \
+  --output z_image_turbo_f32.bpk \
+  --model-type transformer \
+  --dtype f32
 
 # bpk → safetensors
 z-image-train convert \
@@ -153,7 +161,44 @@ z-image-train convert \
 | `--input` | *(required)* | Input model file |
 | `--output` | *(required)* | Output model file |
 | `--model-type` | `transformer` | Model type: `transformer` (or `t`), `autoencoder` (or `ae`, `vae`), `text-encoder` (or `te`) |
+| `--dtype` | *(preserve)* | Cast weights to: `f32`, `f16`, or `bf16` |
 | `--overwrite` | `false` | Overwrite existing output file |
+
+> **Note:** WGSL (the WGPU shader language) does not support bf16. If you're on a platform without Metal or working Vulkan (e.g. AMD on Linux), convert bf16 models to f16 or f32 using `--dtype f16` or `--dtype f32`.
+
+### `inspect` — Check tensor dtypes in .bpk files
+
+Inspect a `.bpk` model file to verify the actual dtype of its tensors. Useful to confirm whether a model is truly f16, bf16, or f32 before loading it on a backend that may not support all dtypes.
+
+```sh
+# Show first 20 tensors with their shapes and dtypes
+z-image-train inspect --input model.bpk
+
+# Show all tensors
+z-image-train inspect --input model.bpk --limit 0
+
+# Quick dtype check (just look at the summary at the bottom)
+z-image-train inspect --input z_image_turbo_f16.bpk --limit 1
+```
+
+Example output:
+
+```
+Inspecting: z_image_turbo_f16.bpk
+Total tensors: 453
+
+  [   0] cap_embedder_0.gamma                                [2560]  F16
+  [   1] cap_embedder_1.bias                                 [3840]  F16
+  ...
+
+--- Dtype Summary ---
+  F16: 453 tensors
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--input` | *(required)* | Path to the `.bpk` file to inspect |
+| `--limit` | `20` | Max number of tensors to display (0 = all) |
 
 ## Architecture
 
